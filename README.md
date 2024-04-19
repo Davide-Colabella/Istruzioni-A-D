@@ -122,7 +122,8 @@ Vi do lo script utilizzato l'anno scorso per scaricare e avviare caronte, avremo
 
 
 - caronte.sh:
-```sh 
+
+```sh
 #!/bin/bash
 
 git clone https://github.com/eciavatta/caronte.git
