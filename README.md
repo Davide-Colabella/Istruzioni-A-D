@@ -146,9 +146,11 @@ curl -X 'POST' \
 }'
 ```
 
+
 I pacchetti non vengono catturati automaticamente, ma bisogna passarglieli:
 
 - dump_daemon.sh:
+
 ```sh
 #!/bin/bash
 
@@ -163,6 +165,7 @@ do
   rm "/tmp/captures/${name}"
 done
 ```
+
 
 <b>Assicuratevi di cambiare i cambi username e password (potete scegliere quelli che volete, servono solo a voi, non hanno nulla a che fare con la connessione ssh alla vm), basta che siano uguali fra i due script.</b>
 
