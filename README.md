@@ -2,7 +2,7 @@
 
 # Introduzione
 
-Ciao a tutti, come avrete visto dalle mail nella giornata di domani partiranno le simulazioni di A/D(Attack & Defence). Per farla breve una competizione dove ogni team avrà a propria disposizione una macchina con n servizi che presentano delle vulnerabilità. La finalità della competizione è attaccare per rubare le flag (rubare e inviare una flag al game server permette di guadagnare punti) e difendersi tramite patch o utilizzando software dedicati per bloccare richieste malevole (negare con criterio ovviamente, altrimenti bloccarle completamente è una violazione del regolamento).
+Ciao a tutti, queste sono delle istruzioni utili per le simulazioni di A/D(Attack & Defence). Per farla breve una competizione dove ogni team avrà a propria disposizione una macchina con n servizi che presentano delle vulnerabilità. La finalità della competizione è attaccare per rubare le flag (rubare e inviare una flag al game server permette di guadagnare punti) e difendersi tramite patch o utilizzando software dedicati per bloccare richieste malevole (negare con criterio ovviamente, altrimenti bloccarle completamente è una violazione del regolamento).
 
 [Regolamento A/D](https://rules.ad.cyberchallenge.it/)
 
@@ -71,6 +71,8 @@ scp -i ~/.ssh/<your_key> -r root@<vulnbox-ip>:/root/ ./originale
 
 Poi andremo a montare (collegare in pratica) la cartella della vulnbox sul nostro pc utilizzanso `sshfs`:
 
+Assicuratevi di avere già una cartella dove montare la vulnbox altrimenti sshfs andrà in errore.
+
 Montare la cartella dalla vulnbox sulla nostra macchina:
 ```sh
 sshfs root@<vulnbox-ip>:/root /mnt/vulnbox -o IdentityFile=.ssh/<your_key>
@@ -114,11 +116,12 @@ Ricostruisci e avvia il container Docker Compose:
 docker compose up -d --build
 ```
 
+I comandi di tipo compose vanno lanciati all'interno della cartella root del servizio dove troviamo il file `docker-compose.yml`, in questo modo se abbiamo fatto delle patch possiamo applicarle lanciando `docker compose up -d --build`.
 # Caronte
 
 Iniziamo ad introdurre i tool che ci daranno una mano per capire come veniamo attaccati e bloccare gli attacchi. Caronte è uno strumento per analizzare il flusso di rete durante gli eventi di tipo attacco/difesa come Capture The Flag. Riassimila i pacchetti TCP catturati nei file pcap per ricostruire le connessioni TCP e analizza ciascuna connessione per trovare pattern definiti dall'utente.
 
-Vi do lo script utilizzato l'anno scorso per scaricare e avviare caronte, avremo poi un'interfaccia su `http://localhost:3333` dove visualizzare tutti i pacchetti catturati:
+Vi do lo script utilizzato l'anno scorso per scaricare e avviare caronte, avremo poi un'interfaccia su `http://Ip_Vulnbox:3333` dove visualizzare tutti i pacchetti catturati:
 
 
 - caronte.sh:
@@ -136,7 +139,7 @@ curl -X 'POST' \
   -H 'Content-Type: application/json' \
   -d '{
   "config": {
-    "server_address": "10.60.41.1",
+    "server_address": "Ip_Vulnbox", #DA CAMBIARE
     "flag_regex": "[A-Z0-9]{31}=",
     "auth_required": true
   },
@@ -177,17 +180,160 @@ Individuata la vulnerabilità e creato lo script ad hoc per estrarre la flag dov
 
 Vi consiglio di avviarlo sulla vostra macchina e non sulla vm perchè potrebbe essere molto pesante.
 
-Composto da una parte client e da una parte server, il rapporto server-client è 1 a molti:
+Composto da una parte client e da una parte server, il rapporto server-client è 1 a molti.
+
+Avremo quindi un Farm server avviato sulla vulnbox o sul vostro pc e n Farm client avviati sui vostri pc.
 
 ## Farm server:
 
 Il Farm server è uno strumento che raccoglie flag dai vari Farm Client e le invia al gameserver, mostrando lo stato di ogni flag inviata (accettata, in attesa, rifiutata) e i punti ottenuti da questa flag.
 
-Per installarlo:
+Ora abbiamo due modi per avviarlo, utilizzare la versione pre-configurata che vi allego qui sotto dove dovremo modificare solamente un paio di parametri oppure clonare la repo da git e creare a mano dei file per farla funzionare:
+
+Struttura DestructiveFarm:
+
+```
+Destructive_Farm
+├───.git
+├───client
+├───docs
+├───server
+│   ├───protocols
+│   ├───static
+│   ├───templates
+│   └───__pycache__
+└───tests
+```
+
+### 1. Setup server di DestructiveFarm clonato da github:
+
+Partiamo con:
 ```sh 
 git clone https://github.com/borzunov/DestructiveFarm
-cd DestructiveFarm/server
+cd DestructiveFarm/server/
+```
+
+Ora dobbiamo creare il file `cyberchallengectf_http.py` nella cartella `protocols`:
+
+```sh
+cd protocols/
+nano cyberchallengectf_http.py
+```
+
+e mettiamo questo:
+
+```py
+import requests
+
+from server import app
+from server.models import FlagStatus, SubmitResult
+
+
+RESPONSES = {
+FlagStatus.QUEUED: ['timeout', 'game not started', 'try again later', 'game over', 'is not up', 'no such flag'], 
+FlagStatus.ACCEPTED: ['accepted', 'congrat'], 
+FlagStatus.REJECTED: ['invalid flag', 'flag from nop team', 'own', 'old', 'claimed', 'bad', 'wrong', 'expired', 'unknown', 'your own', 'too old', 'not in database', 'already submitted', 'invalid flag'],
+}
+
+
+def submit_flags(flags, config):
+	r = requests.put(
+		config['SYSTEM_URL'], 
+		headers={'X-Team-Token': config['SYSTEM_TOKEN']}, 
+		json=[item.flag for item in flags], 
+		timeout=5
+		)
+
+	# log 
+	
+	unknown_responses = set()
+	for item in r.json():
+		response = item['msg'].strip()
+		response = response.replace('[{}] '.format(item['flag']), '')
+		response_lower = response.lower()
+
+		for status, substrings in RESPONSES.items():
+			if any(s in response_lower for s in substrings):
+				found_status = status
+				break
+		else:
+			found_status = FlagStatus.QUEUED
+			if response not in unknown_responses:
+				unknown_responses.add(response)
+				app.logger.warning('Unknown checksystem response (flag will be resent): %s', response)
+
+		yield SubmitResult(item['flag'], found_status, response)
+
+```
+
+Infine:
+
+```sh
+cd ../
+nano start_sploit.py
+```
+
+e cambiamo:
+
+```py
+parser.add_argument('-u', '--server-url', metavar='URL',
+                        default='http://farm.kolambda.com:5000',
+                        help='Server URL')
+```
+
+in:
+
+```py
+parser.add_argument('-u', '--server-url', metavar='URL',
+                        default='http://localhost:5000',
+                        help='Server URL')
+```
+
+In caso di conflitti di porte con i servizi della vulnbox potete cambiare la porta con cui parte Farm server.
+
+ora seguiamo la procedura identica al DestructiveFarm pre-configurato.
+
+### 2. Setup server pre-configurato:
+
+
+Andiamo nella cartella server e modifichiamo il file `config.py`:
+
+```sh
+cd DestructiveFarm/server/
+nano config.py
+```
+Ho utilizzato nano, ma potete utilizzare un qualsiasi editor di testo
+
+
+Apportiamo le seguenti modifiche:
+
+```py
+# CAMBIARE I RANGE A SECONDA DELLA SIMULAZIONE O PER LA GARA NAZIONALE
+    'TEAMS': {'Team #{}'.format(i): '10.60.{}.1'.format(i)
+              for i in range(1, 43) if i != 30},
+    'FLAG_FORMAT': r'^[A-Z0-9]{31}=$',
+```
+
+```py
+'SYSTEM_PROTOCOL': 'cyberchallengectf_http',
+'SYSTEM_URL': 'http://10.10.0.1:8080/flags',
+# CAMBIARE CON IL TEAM TOKEN DEL PROPRIO TEAM
+'SYSTEM_TOKEN': '30cf9b97e01a39a03b75895f090b7982',
+```
+```py
+'SERVER_PASSWORD': 'GfPbHr1qCShjb097',
+```
+Le cose da cambiare sono: 
+- il range con cui cicla sui team e il not affianco (attualmente è settato per 42 team e deve saltare il 30, che saremmo noi)
+- il valore di `SYSTEM_TOKEN`
+- la password per connetterci a destructiveFarm
+
+Per avviarlo lanciamo:
+
+```sh
 python3 -m pip install -r requirements.txt
+chmod +x start_server.sh
+./start_server.sh
 ```
 
 ## Farm Client:
@@ -199,10 +345,10 @@ Bisogna avviare un client per exploit.
 Con Farm Server avviato e un file exploit, possiamo lanciare Farm Client così:
 
 ```sh
-./start_sploit.py sploit.py -u http://10.0.0.1:5000
+./start_sploit.py sploit.py -u http://{ip}:{porta}
 ```
 
-dove `sploit.py` è il file contentente l'exploit e `http://10.0.0.1:5000` l'indirizzo della Farm Server.
+dove `sploit.py` è il file contentente l'exploit, `ip` l'indirizzo della macchina su cui è avviato Farm server e `porta` la porta su cui è disponibile Farm server.
 
 Se avete più script dovete avviare più processi di Farm Client aprendo più finestre terminali o utilizzando `tmux` utile per sdoppiare una singola finestra del terminale in più terminali.
 
@@ -217,67 +363,3 @@ Salvando questo codice in un file.sh e sostituendo i valori indicati, quando ver
 Tutti i file generati dallo script verranno salvati nella posizione in cui viene eseguito.
 
 Salvate nella stessa cartella script.sh e player.conf altrimenti non partirà.
-
-```sh
-#!/bin/bash
-
-# Variabili inizializzate
-file_key="$PWD/key"
-file_conf="$PWD/player1.conf"
-ip="10.60.41.1"  # Da sostituire con l'indirizzo IP corretto
-username="root"  # Da sostituire con il nome utente corretto
-password="x2o2x7D45mFFhv0q"  # Da sostituire con la password corretta
-
-# Controlla se il file player.conf esiste
-if [ ! -f "$file_conf" ]; then
-    echo "Il file $file_conf non esiste. Lo script verrà interrotto."
-    exit 1
-fi
-
-# Controlla se i pacchetti sono installati e installa quelli mancanti
-if ! dpkg -s wireguard-tools fuse3 ssh sshfs sshpass >/dev/null 2>&1; then
-    sudo apt install -y wireguard-tools fuse3 ssh sshfs sshpass
-fi
-
-# Disattiva qualsiasi VPN WireGuard attiva
-echo "Disattivazione di qualsiasi VPN WireGuard attiva..."
-sudo wg-quick down --all
-
-# Attiva la VPN WireGuard corretta
-echo "Attivazione della VPN WireGuard corretta..."
-sudo wg-quick up "$file_conf"
-
-# Genera le chiavi SSH se non esistono già e le copia sul server
-if [ ! -f "$file_key" ] || [ ! -f "$file_key.pub" ]; then
-    ssh-keygen -t ed25519 -C comment -f "$file_key" -N ""
-fi
-sshpass -p "$password" ssh-copy-id -i "$file_key.pub" "$username@$ip"
-
-# Verifica se la cartella "originale" esiste e contiene file
-if [ -d "originale" ] && [ "$(ls -A originale)" ]; then
-    echo "La cartella 'originale' esiste e contiene file. Non viene rifatta la copia dal server."
-else
-    # Rimuove la directory "originale" se esiste e scarica la directory originale dal server
-    if [ -d "originale" ]; then
-        rm -rf "originale"
-    fi
-    scp -i "$file_key" -r "$username@$ip":/root/ ./originale
-fi
-
-# Smonta la cartella "vulnbox" se è già montata e monta il file system remoto
-if mountpoint -q ./vulnbox; then
-    fusermount -u ./vulnbox
-fi
-if [ ! -d "vulnbox" ]; then
-    mkdir vulnbox
-fi
-sshfs "$username@$ip":/root ./vulnbox -o IdentityFile="$file_key"
-
-# Chiede all'utente se desidera connettersi alla VM tramite SSH
-read -p "Desideri connetterti alla VM? (sì/no): " choice
-if [ "$choice" = "si" ] || [ "$choice" = "sì" ]; then
-    ssh -o StrictHostKeyChecking=no -i "$file_key" "$username@$ip"
-else
-    echo "Esecuzione terminata."
-fi
-```
