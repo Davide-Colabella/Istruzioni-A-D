@@ -9,6 +9,17 @@ ip=""
 username="root"
 password=""
 
+#Colors
+Color_Off='\033[0m'
+Black='\033[0;30m'        # Black
+Red='\033[0;31m'          # Red
+Green='\033[0;32m'        # Green
+Yellow='\033[0;33m'       # Yellow
+Blue='\033[0;34m'         # Blue
+Purple='\033[0;35m'       # Purple
+Cyan='\033[0;36m'         # Cyan
+White='\033[0;37m'        # White
+
 # Carica le impostazioni dal file di configurazione se esiste
 if [ -f "$config_file" ]; then
     source "$config_file"
@@ -23,7 +34,7 @@ save_config() {
 # Funzione per controllare e installare i pacchetti mancanti
 check_and_install_packages() {
     if ! dpkg -s wireguard-tools fuse3 ssh sshfs sshpass >/dev/null 2>&1; then
-        echo -e "\e[1;32mSto installando dei pacchetti mancanti...\e[0m"
+        echo -e "${Yellow}Sto installando dei pacchetti mancanti...${Color_Off}"
         sudo apt install -y wireguard-tools fuse3 ssh sshfs sshpass
         clear
     fi
@@ -31,65 +42,52 @@ check_and_install_packages() {
 
 # Funzione per disattivare qualsiasi VPN WireGuard attiva
 deactivate_wireguard() {
-    echo "Disattivazione della VPN WireGuard..."
+    echo -e "${Blue}Disattivazione della VPN WireGuard...${Color_Off}"
     sudo wg-quick down "$file_conf"
 }
 
 # Funzione per attivare la VPN WireGuard corretta
 activate_wireguard() {
-    echo "Attivazione della VPN WireGuard corretta..."
+    echo -e "${Green}Attivazione della VPN WireGuard corretta...${Color_Off}"
     sudo wg-quick up "$file_conf"
 }
 
 # Funzione per generare le chiavi SSH e copiarle sul server
 generate_and_copy_ssh_keys() {
-    local print_echo="$1"
+    
+    echo -e "${Yellow}Generazione delle chiavi SSH e copia sul server...${Color_Off}"
 
-    # Verifica se nel file di configurazione sono presenti IP e password
-    if [ -n "$ip" ] && [ -n "$password" ]; then
-        # Controlla se le chiavi SSH esistono, altrimenti genera
-        if [ ! -f "$file_key" ] || [ ! -f "$file_key.pub" ]; then
-            echo "Le chiavi SSH non sono presenti. Generazione delle chiavi..."
-            ssh-keygen -t rsa -b 4096 -f "$file_key" -N ""
-            # Copia la chiave pubblica sul server
-            sshpass -p "$password" ssh-copy-id -i "$file_key.pub" -o StrictHostKeyChecking=no "$username@$ip"
-        fi
-        return
-    fi
-
-    if [ ! -f "$file_key" ] || [ ! -f "$file_key.pub" ]; then
-        if [ "$print_echo" = "true" ]; then
-            echo
-        fi
-        echo "Generazione delle chiavi SSH e copia sul server..."
-        echo
+    if [ -z "$ip" ] || [ -z "$password" ]; then    
         read -p "Inserisci l'IP: " ip
         read -p "Inserisci la password: " -s password
-        echo
-        # Genera le chiavi SSH
-        ssh-keygen -t rsa -b 4096 -f "$file_key" -N ""
-
-        # Copia la chiave pubblica sul server
-        sshpass -p "$password" ssh-copy-id -i "$file_key.pub" -o StrictHostKeyChecking=no "$username@$ip"
-        # Salva le impostazioni nel file di configurazione
-        save_config
-    elif [ "$print_echo" = "true" ]; then
-        echo "Le chiavi SSH esistono già."
+    else
+        echo -ne "${Blue}Utilizzare IP ($ip) e password ($password) salvati? (sì/no): ${Color_Off}"
+        read use_saved
+        if [ "$use_saved" = "no" ]; then
+            read -p "Inserisci l'IP: " ip
+            read -p "Inserisci la password: " -s password
+        fi
     fi
+    if [ -f "$file_key" ] || [ -f "$file_key" ]; then  
+            rm -rf "$file_key" "$file_key.pub"
+    fi
+    # Genera le chiavi SSH
+    ssh-keygen -t rsa -b 4096 -f "$file_key" -N ""
+
+    # Copia la chiave pubblica sul server
+    sshpass -p "$password" ssh-copy-id -i "$file_key.pub" -o StrictHostKeyChecking=no "$username@$ip"
+    # Salva le impostazioni nel file di configurazione
+    save_config
+    echo -e "${Blue}Chiavi correttamente generate.${Color_Off}"
 }
 
 # Funzione per copiare in locale la vulnbox
 copy_vulnbox_locally() {
-    if [ -n "$ip" ] && [ -n "$password" ]; then
-        read -p "Utilizzare l'IP salvato ($ip) e la password salvata? (sì/no): " use_saved
-        if [ "$use_saved" = "no" ]; then
-            generate_and_copy_ssh_keys true
-        fi
-    else
-        generate_and_copy_ssh_keys true
-    fi
+
+    generate_and_copy_ssh_keys
+
     if [ -d "originale" ] && [ "$(ls -A originale)" ]; then
-        echo "La cartella 'originale' esiste e contiene file. Non viene rifatta la copia dal server."
+        echo -e "${Red}La cartella 'originale' esiste e contiene file. Non viene rifatta la copia dal server.${Color_Off}"
     else
         if [ -d "originale" ]; then
             rm -rf "originale"
@@ -100,67 +98,59 @@ copy_vulnbox_locally() {
 
 # Funzione per montare la vulnbox
 mount_vulnbox() {
-    if [ -n "$ip" ] && [ -n "$password" ]; then
-        read -p "Utilizzare l'IP salvato ($ip) e la password salvata? (sì/no): " use_saved
-        if [ "$use_saved" = "no" ]; then
-            generate_and_copy_ssh_keys true
-        fi
-    else
-        generate_and_copy_ssh_keys true
-    fi
+    
+    generate_and_copy_ssh_keys
+
     if mountpoint -q ./vulnbox; then
-        echo "La cartella 'vulnbox' è già montata."
+        echo -e "${Red}La cartella 'vulnbox' è già montata.${Color_Off}"
         return
     fi
     if [ ! -d "vulnbox" ]; then
         mkdir vulnbox
     fi
-    generate_and_copy_ssh_keys false
     sshfs "$username@$ip":/$username ./vulnbox -o IdentityFile="$file_key"
 }
 
 # Funzione per smontare la vulnbox se è già montata
 unmount_vulnbox() {
+
     if mountpoint -q ./vulnbox; then
         fusermount -u ./vulnbox
-        echo "La cartella 'vulnbox' è stata smontata."
+        echo -e "${Blue}La cartella 'vulnbox' è stata smontata.${Color_Off}"
     else
-        echo "La cartella 'vulnbox' non è montata."
+        echo -e "${Red}La cartella 'vulnbox' non è montata.${Color_Off}"
     fi
 }
 
 # Funzione per connettersi alla VM tramite SSH
 connect_to_vm() {
-    
-    if [ -n "$ip" ] && [ -n "$password" ]; then
-        read -p "Utilizzare l'IP salvato ($ip) e la password salvata? (sì/no): " use_saved
-        if [ "$use_saved" = "no" ]; then
-            generate_and_copy_ssh_keys true
-        fi
-    else
-        generate_and_copy_ssh_keys true
-    fi
-    if [ ! -f "$file_key" ] || [ ! -f "$file_key.pub" ]; then
-        echo "Le chiavi SSH non sono presenti. Generazione delle chiavi..."
-        generate_and_copy_ssh_keys false
-    fi
+    generate_and_copy_ssh_keys
     ssh -o StrictHostKeyChecking=no -i "$file_key" "$username@$ip"
 }
 
 check_vpn() {
     if ! sudo wg show | grep -q "interface: $interface"; then
-        echo "La VPN WireGuard non è attiva. La sto attivando..."
+        echo -e "${Red}La VPN WireGuard non è attiva. La sto attivando...${Color_Off}"
         activate_wireguard
         return
     fi
 }
 
+exit_script() {
+    echo
+    echo -e "${Green}Esecuzione terminata, alla prossima!!${Color_Off}"
+    sleep 1
+    clear
+    exit 0
+}
+
 # Funzione per il menu principale
 main_menu() {
-    clear
-    check_and_install_packages
-    cat << "EOF"
-    
+    while true; do
+        clear
+        check_and_install_packages
+        cat << "EOF"
+        
    _____      __                 _    __      __      __              
   / ___/___  / /___  ______     | |  / /_  __/ /___  / /_  ____  _  __
   \__ \/ _ \/ __/ / / / __ \    | | / / / / / / __ \/ __ \/ __ \| |/_/
@@ -170,65 +160,58 @@ main_menu() {
 
 
 EOF
-    echo -e "Menu principale:\n"
-    echo "1) Setup VPN"
-    echo "2) Spegni VPN"
-    echo "3) Generazione key"
-    echo "4) Connessione vulnbox"
-    echo "5) Copia in locale della vulnbox"
-    echo "6) Mount della vulnbox"
-    echo "7) Unmount della vulnbox"
-    echo -e "8) Uscire\n"
-    read -p "Scelta: " choice
-    case $choice in
-        1)
-            activate_wireguard
-            ;;
-        2)
-            deactivate_wireguard
-            ;;
-        3)
-            check_vpn
-            generate_and_copy_ssh_keys true
-            ;;
-        4)  
-            check_vpn
-            connect_to_vm
-            ;;
-        5)
-            check_vpn
-            copy_vulnbox_locally
-            ;;
-        6)
-            check_vpn
-            mount_vulnbox
-            ;;
-        7)
-            unmount_vulnbox
-            ;;
-        8)
-            clear
-            exit 0
-            ;;
-        *)
-            echo "Scelta non valida."
-            sleep 0.5
-            clear
-            main_menu
-            ;;
-    esac
-
-    read -p "Vuoi tornare al menu principale? (sì/no): " return_choice
-    if [ "$return_choice" = "no" ]; then
-        echo -e "\e[1;32mEsecuzione terminata.\e[0m"
-        sleep 0.5
-        clear
-        exit 0
-    else
-        clear
-        main_menu
-    fi
+        PS3="
+Scegli un'opzione: "
+        options=("Setup VPN" "Spegni VPN" "Connessione vulnbox" "Copia in locale della vulnbox" "Mount della vulnbox" "Unmount della vulnbox" "Uscire")
+        
+        select opt in "${options[@]}"; do
+            case $opt in
+                "Setup VPN")
+                    activate_wireguard
+                    echo
+                    ;;
+                "Spegni VPN")
+                    deactivate_wireguard
+                    echo
+                    ;;
+                "Connessione vulnbox")  
+                    check_vpn
+                    connect_to_vm
+                    echo
+                    ;;
+                "Copia in locale della vulnbox")
+                    check_vpn
+                    copy_vulnbox_locally
+                    echo
+                    ;;
+                "Mount della vulnbox")
+                    check_vpn
+                    mount_vulnbox
+                    echo
+                    ;;
+                "Unmount della vulnbox")
+                    unmount_vulnbox
+                    echo
+                    ;;
+                "Uscire")  
+                    exit_script
+                    ;;
+                *)
+                    echo "Scelta non valida."
+                    sleep 0.5
+                    clear
+                    main_menu
+                    ;;
+            esac
+            break
+        done
+        read -p $'Vuoi tornare al menu principale? (sì/no): ' return_choice
+        if [ "$return_choice" = "no" ]; then
+            exit_script
+        fi
+    done
 }
+
 
 # Esecuzione del menu principale
 main_menu
