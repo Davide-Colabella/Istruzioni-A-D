@@ -4,7 +4,7 @@
 file_key="$PWD/key"
 file_conf="$PWD/player.conf"
 interface="player"
-config_file="$PWD/.my_script_config"
+config_file="$PWD/.setup_config"
 ip=""
 username="root"
 password=""

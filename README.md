@@ -25,13 +25,15 @@ sudo apt install wireguard
 A questo punto possiamo connetterci con:
 
 ```sh
-sudo wg-quick up <file.conf>
+sudo wg-quick up <$PWD/file.conf">
 ```
+
+`$PWD` indica la directory corrente, quindi se il file `player.conf` è nella directory corrente possiamo lanciare il comando così, altrimenti dobbiamo specificare il path completo.
 
 Per disconnetterci:
 
 ```sh
-sudo wg-quick down <file.conf>
+sudo wg-quick down <$PWD/file.conf>
 ```
 
 # `ssh` (Secure SHell)
@@ -42,17 +44,19 @@ Per poterci connettere in ssh dovremo utilizzare delle key, che vanno prima gene
 
 Genera la chiave ssh:
 ```sh
-ssh-keygen -t ed25519 -C comment
+ssh-keygen -t rsa -b 4096 -f "<Nome chiave>" -N ""
 ```
+
+Genero la chiave ssh dandole un nome e senza password, in modo che non mi chieda la password ogni volta che mi connetto.
 
 Copia la chiave alla vulnbox:
 ```sh
-ssh-copy-id -i ~/.ssh/<your_key> root@<vulnbox-ip>
+ssh-copy-id -i "$file_key.pub" -o StrictHostKeyChecking=no root@<vulnbox-ip>
 ```
 
 Stabilisce la connessione ssh:
 ```sh
-ssh -i ~/.ssh/<your_key> root@<vulnbox-ip>
+ssh -o StrictHostKeyChecking=no -i key.pub root@<vulnbox-ip>
 ```
 
 # `scp` (Secure copy protocol)
@@ -63,7 +67,7 @@ Successivamente la cosa migliore da fare prima di partire è salvare in locale u
 sudo apt install scp
 ```
 ```sh
-scp -i ~/.ssh/<your_key> -r root@<vulnbox-ip>:/root/ ./originale
+scp -o StrictHostKeyChecking=no -i key.pub -r root@<vulnbox-ip>:~/ ./originale
 ```
 
 
@@ -75,12 +79,12 @@ Assicuratevi di avere già una cartella dove montare la vulnbox altrimenti sshfs
 
 Montare la cartella dalla vulnbox sulla nostra macchina:
 ```sh
-sshfs root@<vulnbox-ip>:/root /mnt/vulnbox -o IdentityFile=.ssh/<your_key>
+sshfs root@<vulnbox-ip>:/root /vulnbox -o IdentityFile=key.pub
 ```
 
 Smontare la cartella:
 ```sh
-fusermount -u /mnt/vulnbox
+fusermount -u /vulnbox
 ```
 
 <b>IMPORTANTISSIMO: se fate modifiche sulla cartella montata queste verranno riflesse anche sulla vulnbox, quindi non fate cose come eliminare file/cartelle, altrimenti sono *****!</b>
@@ -356,10 +360,26 @@ Se avete più script dovete avviare più processi di Farm Client aprendo più fi
 
 [Cheat-Sheet dei comandi](https://gist.github.com/MohamedAlaa/2961058)
 
-# Script per setup ssh e copia servizi
+# Setup della vostra macchina
 
-Salvando questo codice in un file.sh e sostituendo i valori indicati, quando verrà eseguito creerà la chiave ssh come `key`, copierà il contenuto della vulnbox in `/originale` e poi vi chiederà se volete connettervi in ssh.
+Per poter lavorare il più velocemente possibile vi consiglio di installare i tool visti prima utilizzando lo script che ho preparato per voi:
 
-Tutti i file generati dallo script verranno salvati nella posizione in cui viene eseguito.
+Da dentro la vostra macchina le uniche cose richieste sono avere il file di configurazione della vpn e i dati di accesso alla vulnbox.
+Potete copiarlo interamente e copiarlo nella shell:
 
-Salvate nella stessa cartella script.sh e player.conf altrimenti non partirà.
+```sh
+mkdir ~/ad
+cd ~/ad
+wget https://raw.githubusercontent.com/Davide-Colabella/Istruzioni-A-D/main/setup.sh
+chmod +x setup.sh
+./setup.sh
+```
+
+Lo script scaricherà e installerà tutti i tool necessari per la competizione, vi basterà solo inserire i dati di accesso alla vpn e alla vulnbox.
+
+# Setup della vulnbox
+
+Avviate Caronte seguendo le istruzioni riportate sopra, poi per avviare DestructiveFarm sulla vulnbox, ricordate che c'è un solo server e N client, quindi avviate il server sulla vulnbox e i client sulle vostre macchine.
+
+
+
