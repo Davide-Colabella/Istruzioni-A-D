@@ -2,8 +2,6 @@
 
 # Variabili inizializzate
 file_key="$PWD/key"
-file_conf="$PWD/player.conf"
-interface="player"
 config_file="$PWD/.setup_config"
 ip=""
 username="root"
@@ -38,18 +36,6 @@ check_and_install_packages() {
         sudo apt install -y wireguard-tools fuse3 ssh sshfs sshpass
         clear
     fi
-}
-
-# Funzione per disattivare qualsiasi VPN WireGuard attiva
-deactivate_wireguard() {
-    echo -e "${Blue}Disattivazione della VPN WireGuard...${Color_Off}"
-    sudo wg-quick down "$file_conf"
-}
-
-# Funzione per attivare la VPN WireGuard corretta
-activate_wireguard() {
-    echo -e "${Green}Attivazione della VPN WireGuard corretta...${Color_Off}"
-    sudo wg-quick up "$file_conf"
 }
 
 # Funzione per generare le chiavi SSH e copiarle sul server
@@ -128,14 +114,6 @@ connect_to_vm() {
     ssh -o StrictHostKeyChecking=no -i "$file_key" "$username@$ip"
 }
 
-check_vpn() {
-    if ! sudo wg show | grep -q "interface: $interface"; then
-        echo -e "${Red}La VPN WireGuard non è attiva. La sto attivando...${Color_Off}"
-        activate_wireguard
-        return
-    fi
-}
-
 exit_script() {
     echo
     echo -e "${Green}Esecuzione terminata, alla prossima!!${Color_Off}"
@@ -162,30 +140,19 @@ main_menu() {
 EOF
         PS3="
 Scegli un'opzione: "
-        options=("Setup VPN" "Spegni VPN" "Connessione vulnbox" "Copia in locale della vulnbox" "Mount della vulnbox" "Unmount della vulnbox" "Uscire")
+        options=("Connessione vulnbox" "Copia in locale della vulnbox" "Mount della vulnbox" "Unmount della vulnbox" "Uscire")
         
         select opt in "${options[@]}"; do
             case $opt in
-                "Setup VPN")
-                    activate_wireguard
-                    echo
-                    ;;
-                "Spegni VPN")
-                    deactivate_wireguard
-                    echo
-                    ;;
                 "Connessione vulnbox")  
-                    check_vpn
                     connect_to_vm
                     echo
                     ;;
                 "Copia in locale della vulnbox")
-                    check_vpn
                     copy_vulnbox_locally
                     echo
                     ;;
                 "Mount della vulnbox")
-                    check_vpn
                     mount_vulnbox
                     echo
                     ;;
